@@ -7,13 +7,13 @@
 **Запуск без установки:**
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/saveksme/multitest/master/multitest.sh)
+bash <(curl -sL https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh)
 ```
 
 **Установка как команда `multitest`:**
 
 ```bash
-curl -sL https://raw.githubusercontent.com/saveksme/multitest/master/multitest.sh -o /usr/local/bin/multitest && chmod +x /usr/local/bin/multitest && echo "Установлено! Запуск: multitest"
+curl -sL https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh -o /usr/local/bin/multitest && chmod +x /usr/local/bin/multitest && echo "Установлено! Запуск: multitest"
 ```
 
 После установки скрипт доступен из любого места:
@@ -44,8 +44,36 @@ multitest
 
 | # | Название | Описание |
 |---|----------|----------|
-| 1 | BBR + Cake | Включение TCP BBR congestion control и Cake qdisc |
+| 1 | BBR + CAKE | Включение TCP BBR и фактическое применение CAKE к интерфейсам с маршрутом по умолчанию |
 | 2 | Выключить IPv6 | Отключение IPv6 через sysctl |
+| 3 | Fail2Ban | Установка и защита SSH: 5 ошибок за 10 минут блокируют IP на 12 часов |
+| 4 | Статус | Проверка реального состояния BBR, CAKE на каждом интерфейсе и jail `sshd` |
+
+### Чем новая проверка CAKE отличается от старой
+
+Значение `net.core.default_qdisc=cake` само по себе не означает, что CAKE уже
+работает на активном сетевом интерфейсе. Утилита теперь:
+
+1. Находит интерфейсы по IPv4/IPv6-маршрутам по умолчанию, не полагаясь на имя
+   вроде `eth0`, `ens3` или `enp1s0`.
+2. Выполняет `tc qdisc replace dev <интерфейс> root cake`.
+3. Проверяет, что в выводе `tc qdisc show` действительно присутствует
+   `qdisc cake ... root`.
+4. На системах с systemd устанавливает `multitest-cake.service`, чтобы повторно
+   применить и проверить CAKE после поднятия сети при перезагрузке.
+
+Если хотя бы одна из проверок не прошла, скрипт не сообщает об успехе и выводит
+красный статус проблемного компонента.
+
+Для редких схем маршрутизации интерфейс можно указать явно перед запуском,
+например: `MULTITEST_NET_IFACE=ens3 multitest`.
+
+### Настройки Fail2Ban
+
+Создаётся отдельный файл `/etc/fail2ban/jail.d/sshd-multitest.local`. SSH-порт
+определяется через итоговую конфигурацию `sshd`, поэтому поддерживается и
+нестандартный порт. Перед перезапуском выполняется `fail2ban-client -t`, после —
+проверка активного jail `sshd`.
 
 ## Зависимости
 
@@ -54,6 +82,10 @@ multitest
 - `curl`
 - `wget`
 - `sysbench`
+- `iperf3`
+- `iproute2`/`iproute` (для `ip` и `tc`)
+- `kmod`
+- `fail2ban` (при выборе соответствующего пункта)
 
 Поддерживаемые пакетные менеджеры: `apt`, `dnf`, `yum`, `apk`, `pacman`.
 
