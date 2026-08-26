@@ -4,7 +4,7 @@
 #  Multitest — интерактивный скрипт диагностики сервера
 # ============================================================
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 REPO_URL="https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh"
 
 # Цвета
@@ -498,6 +498,32 @@ show_bbr_cake_status() {
     fi
 }
 
+prompt_reboot_after_cake() {
+    local answer
+
+    echo ""
+    echo -e "${YELLOW}CAKE уже применён. Перезагрузка нужна для контрольной проверки автозапуска.${NC}"
+    echo -ne "${BOLD}Перезагрузить сервер сейчас? [y/N]: ${NC}"
+    read -r answer
+
+    case "${answer,,}" in
+        y|yes|д|да)
+            echo -e "${YELLOW}Сервер перезагружается. SSH-соединение сейчас закроется.${NC}"
+            if command -v systemctl &>/dev/null; then
+                systemctl reboot
+            elif command -v reboot &>/dev/null; then
+                reboot
+            else
+                echo -e "${RED}Команда перезагрузки не найдена. Выполните reboot вручную.${NC}"
+                return 1
+            fi
+            ;;
+        *)
+            echo -e "${GREEN}Перезагрузка пропущена. Позже выполните reboot и проверьте статус через пункт 12 → 4.${NC}"
+            ;;
+    esac
+}
+
 enable_bbr_cake() {
     print_separator "Включение BBR + Cake"
 
@@ -576,6 +602,7 @@ EOF
     echo ""
     if [[ $apply_failed -eq 0 ]]; then
         echo -e "${GREEN}${BOLD}BBR и CAKE действительно активированы.${NC}"
+        prompt_reboot_after_cake
     else
         echo -e "${RED}${BOLD}Активация не подтверждена. Красный статус выше показывает причину.${NC}"
         return 1

@@ -49,8 +49,14 @@ echo "port 2222"
 echo "port 22"
 EOF
 
-chmod +x "$TEST_BIN/ip" "$TEST_BIN/tc" "$TEST_BIN/sshd"
+cat > "$TEST_BIN/systemctl" <<'EOF'
+#!/bin/sh
+echo "$*" >> "${REBOOT_TEST_LOG:?}"
+EOF
+
+chmod +x "$TEST_BIN/ip" "$TEST_BIN/tc" "$TEST_BIN/sshd" "$TEST_BIN/systemctl"
 PATH="$TEST_BIN:$PATH"
+export REBOOT_TEST_LOG="$TEST_BIN/reboot.log"
 
 interfaces=$(detect_network_interfaces)
 assert_eq $'ens3\nenp1s0' "$interfaces" "default-route interface detection"
@@ -68,7 +74,14 @@ assert_eq "2222,22" "$(detect_sshd_ports)" "SSH port detection"
 
 bash -n "$PROJECT_DIR/multitest.sh"
 
-assert_eq "Multitest 1.3" "$(bash "$PROJECT_DIR/multitest.sh" --version)" "version output"
+assert_eq "Multitest 1.4" "$(bash "$PROJECT_DIR/multitest.sh" --version)" "version output"
+
+: > "$REBOOT_TEST_LOG"
+printf '\n' | prompt_reboot_after_cake >/dev/null
+[[ ! -s "$REBOOT_TEST_LOG" ]] || fail "empty reboot answer must not reboot"
+
+printf 'y\n' | prompt_reboot_after_cake >/dev/null
+assert_eq "reboot" "$(cat "$REBOOT_TEST_LOG")" "confirmed reboot action"
 
 grep -q 'zz-multitest-bbr-cake.conf' "$PROJECT_DIR/multitest.sh" \
     || fail "late-loading sysctl configuration is missing"
