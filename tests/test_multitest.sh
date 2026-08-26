@@ -67,4 +67,14 @@ fi
 assert_eq "2222,22" "$(detect_sshd_ports)" "SSH port detection"
 
 bash -n "$PROJECT_DIR/multitest.sh"
+
+assert_eq "Multitest 1.3" "$(bash "$PROJECT_DIR/multitest.sh" --version)" "version output"
+
+grep -q 'zz-multitest-bbr-cake.conf' "$PROJECT_DIR/multitest.sh" \
+    || fail "late-loading sysctl configuration is missing"
+grep -q 'root cake triple-isolate' "$PROJECT_DIR/multitest.sh" \
+    || fail "explicit triple-isolate CAKE mode is missing"
+grep -q 'Konstannttiinn1/multitest/master/multitest.sh' "$PROJECT_DIR/README.md" \
+    || fail "canonical installation URL is missing from README"
+
 echo "PASS: multitest tests"

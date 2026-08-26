@@ -4,7 +4,7 @@
 #  Multitest — интерактивный скрипт диагностики сервера
 # ============================================================
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 REPO_URL="https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh"
 
 # Цвета
@@ -18,6 +18,11 @@ NC='\033[0m'
 # ============================================================
 #  Установка (--install)
 # ============================================================
+
+if [[ "${1:-}" == "--version" ]]; then
+    echo "Multitest ${SCRIPT_VERSION}"
+    exit 0
+fi
 
 if [[ "${1:-}" == "--install" ]]; then
     echo -e "${CYAN}Установка multitest...${NC}"
@@ -357,20 +362,28 @@ install_cake_persistence_service() {
 #!/bin/sh
 set -eu
 
-interfaces=$(
-    {
-        ip -o -4 route show default 2>/dev/null || true
-        ip -o -6 route show default 2>/dev/null || true
-    } | awk '
+interfaces=""
+attempt=1
+while [ "$attempt" -le 30 ]; do
+    interfaces=$(
         {
-            for (i = 1; i <= NF; i++) {
-                if ($i == "dev" && (i + 1) <= NF) {
-                    print $(i + 1)
+            ip -o -4 route show default 2>/dev/null || true
+            ip -o -6 route show default 2>/dev/null || true
+        } | awk '
+            {
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "dev" && (i + 1) <= NF) {
+                        print $(i + 1)
+                    }
                 }
             }
-        }
-    ' | awk '!seen[$0]++'
-)
+        ' | awk '!seen[$0]++'
+    )
+
+    [ -n "$interfaces" ] && break
+    sleep 1
+    attempt=$((attempt + 1))
+done
 
 if [ -z "$interfaces" ]; then
     echo "Не найден сетевой интерфейс с маршрутом по умолчанию" >&2
@@ -382,7 +395,7 @@ modprobe sch_cake 2>/dev/null || true
 applied=0
 for iface in $interfaces; do
     [ -d "/sys/class/net/$iface" ] || continue
-    tc qdisc replace dev "$iface" root cake
+    tc qdisc replace dev "$iface" root cake triple-isolate
     tc qdisc show dev "$iface" | awk '
         $1 == "qdisc" && $2 == "cake" {
             for (i = 3; i <= NF; i++) {
@@ -518,12 +531,14 @@ enable_bbr_cake() {
         echo -e "${YELLOW}Не удалось загрузить sch_cake как модуль. Возможно, CAKE встроен в ядро; проверка продолжится.${NC}"
     fi
 
-    cat > /etc/sysctl.d/99-bbr-cake.conf <<EOF
+    # Имя zz-* важно: файл должен загружаться после стандартного
+    # 99-sysctl.conf, который у некоторых VPS возвращает qdisc=fq.
+    cat > /etc/sysctl.d/zz-multitest-bbr-cake.conf <<EOF
 net.core.default_qdisc=cake
 net.ipv4.tcp_congestion_control=bbr
 EOF
 
-    if ! sysctl -p /etc/sysctl.d/99-bbr-cake.conf; then
+    if ! sysctl -p /etc/sysctl.d/zz-multitest-bbr-cake.conf; then
         echo -e "${RED}Не удалось применить настройки BBR/CAKE через sysctl.${NC}"
         return 1
     fi
@@ -531,7 +546,7 @@ EOF
     while IFS= read -r iface; do
         [[ -n "$iface" ]] || continue
         echo -e "Применяю CAKE к интерфейсу ${BOLD}${iface}${NC}..."
-        if ! tc qdisc replace dev "$iface" root cake; then
+        if ! tc qdisc replace dev "$iface" root cake triple-isolate; then
             echo -e "${RED}Не удалось применить CAKE к ${iface}.${NC}"
             apply_failed=1
         fi

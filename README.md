@@ -4,16 +4,30 @@
 
 ## Быстрый старт
 
-**Запуск без установки:**
+### Единственная рекомендуемая команда установки
 
-```bash
-bash <(curl -sL https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh)
-```
-
-**Установка как команда `multitest`:**
+Используйте основной репозиторий `Konstannttiinn1/multitest`. Команды со ссылкой
+на `saveksme/multitest` устанавливают исходную версию без надёжного применения
+CAKE к активному сетевому интерфейсу.
 
 ```bash
 curl -sL https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh -o /usr/local/bin/multitest && chmod +x /usr/local/bin/multitest && echo "Установлено! Запуск: multitest"
+```
+
+После установки проверьте версию:
+
+```bash
+multitest --version
+```
+
+Ожидаемый результат для этой версии: `Multitest 1.3`.
+
+### Другие варианты
+
+**Одноразовый запуск без установки:**
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh)
 ```
 
 После установки скрипт доступен из любого места:
@@ -56,11 +70,18 @@ multitest
 
 1. Находит интерфейсы по IPv4/IPv6-маршрутам по умолчанию, не полагаясь на имя
    вроде `eth0`, `ens3` или `enp1s0`.
-2. Выполняет `tc qdisc replace dev <интерфейс> root cake`.
+2. Выполняет `tc qdisc replace dev <интерфейс> root cake triple-isolate`.
 3. Проверяет, что в выводе `tc qdisc show` действительно присутствует
    `qdisc cake ... root`.
 4. На системах с systemd устанавливает `multitest-cake.service`, чтобы повторно
    применить и проверить CAKE после поднятия сети при перезагрузке.
+5. Сохраняет параметры в `zz-multitest-bbr-cake.conf`, который загружается после
+   типового `99-sysctl.conf` и не позволяет поздней настройке `qdisc=fq`
+   незаметно отменить CAKE.
+
+CAKE применяется в режиме `triple-isolate`. Сервис автозапуска до 30 секунд ждёт
+появления маршрута по умолчанию, поэтому не привязан к именам `eth0`, `ens3` или
+порядку поднятия сети.
 
 Если хотя бы одна из проверок не прошла, скрипт не сообщает об успехе и выводит
 красный статус проблемного компонента.
