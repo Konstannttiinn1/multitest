@@ -74,7 +74,7 @@ assert_eq "2222,22" "$(detect_sshd_ports)" "SSH port detection"
 
 bash -n "$PROJECT_DIR/multitest.sh"
 
-assert_eq "Multitest 1.4" "$(bash "$PROJECT_DIR/multitest.sh" --version)" "version output"
+assert_eq "Multitest 1.5" "$(bash "$PROJECT_DIR/multitest.sh" --version)" "version output"
 
 : > "$REBOOT_TEST_LOG"
 printf '\n' | prompt_reboot_after_cake >/dev/null
