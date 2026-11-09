@@ -4,8 +4,10 @@
 #  Multitest — интерактивный скрипт диагностики сервера
 # ============================================================
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 REPO_URL="https://raw.githubusercontent.com/Konstannttiinn1/multitest/master/multitest.sh"
+UMKA_SHAPER_URL="https://raw.githubusercontent.com/Konstannttiinn1/multitest/278ac577db3fb0885fb37c5ba17b0841bbceddc6/umka-shaper.sh"
+UMKA_SHAPER_SHA256="5ce1d5578c643d9c4d0029c662c88900ffa77e7feaea1ea64c552c1ecca300ea"
 
 # Цвета
 RED='\033[0;31m'
@@ -89,6 +91,31 @@ require_root() {
         return 1
     fi
 }
+
+run_umka_shaper() (
+    umask 077
+    local directory temporary entry
+    directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P) || return 1
+    temporary=$(mktemp -d /tmp/multitest-shaper.XXXXXX) || return 1
+    trap 'rm -rf -- "$temporary"' EXIT
+    entry="$temporary/umka-shaper.sh"
+    if [[ -f "$directory/umka-shaper.sh" ]]; then
+        cp -- "$directory/umka-shaper.sh" "$entry" || return 1
+    else
+        if ! command -v curl >/dev/null 2>&1; then
+            echo "Для загрузки шейпера нужен curl." >&2
+            return 1
+        fi
+        curl -q --fail --silent --show-error --location --proto '=https' \
+            --proto-redir '=https' --connect-timeout 10 --max-time 90 \
+            --output "$entry" "$UMKA_SHAPER_URL" || return 1
+    fi
+    if ! printf '%s  %s\n' "$UMKA_SHAPER_SHA256" "$entry" | sha256sum --check --status -; then
+        echo "SHA-256 шейпера не совпадает. Обнови multitest и попробуй снова." >&2
+        return 1
+    fi
+    bash "$entry" "$@"
+)
 
 # ============================================================
 #  Установка зависимостей
@@ -529,6 +556,13 @@ enable_bbr_cake() {
 
     require_root || return 1
 
+    if [[ -e /var/lib/umka-shaper/tc-state.json || -e /sys/fs/bpf/umka_shaper ]] ||
+       systemctl is-active --quiet umka-traffic-shaper.service 2>/dev/null ||
+       systemctl is-enabled --quiet umka-traffic-shaper.service 2>/dev/null; then
+        echo -e "${RED}Конфликт с umka-traffic-shaper.service: сначала останови Umka и отключи его автозапуск.${NC}" >&2
+        return 1
+    fi
+
     if ! command -v ip &>/dev/null || ! command -v tc &>/dev/null; then
         echo -e "${YELLOW}ip/tc не найдены, устанавливаю пакет сетевых утилит...${NC}"
         install_iproute || return 1
@@ -766,10 +800,11 @@ show_utilities_menu() {
         echo -e "  ${GREEN}2)${NC}  Выключить IPv6"
         echo -e "  ${GREEN}3)${NC}  Установить и настроить Fail2Ban"
         echo -e "  ${GREEN}4)${NC}  Статус BBR, Cake и Fail2Ban"
+        echo -e "  ${GREEN}5)${NC}  Шейпер Umka — проверка и установка"
         echo ""
         echo -e "  ${RED}0)${NC}  Назад"
         echo ""
-        echo -ne "  ${BOLD}Выберите пункт [0-4]: ${NC}"
+        echo -ne "  ${BOLD}Выберите пункт [0-5]: ${NC}"
         read -r util_choice
 
         case "$util_choice" in
@@ -777,6 +812,7 @@ show_utilities_menu() {
             2) disable_ipv6; pause_prompt ;;
             3) install_fail2ban; pause_prompt ;;
             4) show_utilities_status; pause_prompt ;;
+            5) run_umka_shaper; pause_prompt ;;
             0) return ;;
             *) echo -e "${RED}Неверный выбор.${NC}"; pause_prompt ;;
         esac
@@ -806,7 +842,7 @@ show_menu() {
     echo ""
     echo -e "  ${CYAN}${BOLD}── Утилиты ──${NC}"
     echo ""
-    echo -e "  ${GREEN}12)${NC}  Утилиты (BBR, Cake, Fail2Ban, IPv6)"
+    echo -e "  ${GREEN}12)${NC}  Утилиты (Umka, BBR, Cake, Fail2Ban, IPv6)"
     echo ""
     echo -e "  ${RED} 0)${NC}  Выход"
     echo ""
@@ -842,5 +878,10 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    main "$@"
+    if [[ "${1:-}" == "--shaper" ]]; then
+        shift
+        run_umka_shaper "$@"
+    else
+        main "$@"
+    fi
 fi
